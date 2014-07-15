@@ -5,7 +5,7 @@ from dem import delta_elevation
 from dem import statistics
 from globalmercator import GlobalMercator
 
-data = load('../data/or-sample.csv')
+data = load('data/or-sample.csv')
 
 gm = GlobalMercator()
 
