@@ -10,7 +10,7 @@ from osgeo import gdal
 dem_cache = {'slope': [None]*15, 'aspect': [None]*15, 'elevation': [None]*15}
 
 def fetch_cache_tile(layer, z, x, y):
-    dest = "../cache/dem/" + layer + "/" + str(z) + "/" + str(x) + "/" + str(y) + ".png"
+    dest = "cache/dem/" + layer + "/" + str(z) + "/" + str(x) + "/" + str(y) + ".png"
     if not os.path.exists(dest):
         if not os.path.exists(os.path.dirname(dest)):
             os.makedirs(os.path.dirname(dest))
