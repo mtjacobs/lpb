@@ -1,9 +1,9 @@
 import csv
 
-def load(filename):
+def load_isrid(filename):
     data = []
     header = None
-    fields = {'id': 'Incident #', 'type': 'Incident Type', 'terrain': 'Terrain', 'category': 'Subject Category', 'ipp': 'IPP Coord.', 'find': 'Find Coord', 'delta_e': 'Elevation Change (ft)', 'distance': 'Distance IPP (km)' }
+    fields = {'id': 'Incident #', 'type': 'Incident Type', 'terrain': 'Terrain', 'category': 'Subject Category', 'age': 'Age', 'sex': 'Sex', 'status': 'Subject Status', 'time': 'Total Time Lost', 'ipp': 'IPP Coord.', 'find': 'Find Coord', 'delta_e': 'Elevation Change (ft)', 'distance': 'Distance IPP (km)', 'weather': 'Weather', 'comments': 'Comments', 'ecoregion': 'EcoRegion Domain', 'manhours': 'Total Man Hours', 'signalling': 'Signalling'}
     reader = csv.reader(open(filename, 'rb'), delimiter=',', quotechar='"')
     for row in reader:
         if header == None:
@@ -14,14 +14,25 @@ def load(filename):
         
         obj = {}
         for field in fields:
-            obj[field] = row[header[fields[field]]]
-            if obj[field] == '':
+            try:
+                obj[field] = row[header[fields[field]]]
+                if obj[field] == '':
+                    obj[field] = None
+            except:
                 obj[field] = None
-                
-        if obj['ipp'] != None:
-            obj['ipp'] = [float(obj['ipp'].split(',')[0].strip()), float(obj['ipp'].split(',')[1].strip())]
+        
+        try:
+            if 'ipp' in obj and obj['ipp'] != None:
+                obj['ipp'] = [float(obj['ipp'].split(',')[0].strip()), float(obj['ipp'].split(',')[1].strip())]
 
-        if obj['find'] != None:
-            obj['find'] = [float(obj['find'].split(',')[0].strip()), float(obj['find'].split(',')[1].strip())]
-            data.append(obj)
+            if obj['find'] != None:
+                obj['find'] = [float(obj['find'].split(',')[0].strip()), float(obj['find'].split(',')[1].strip())]
+                data.append(obj)
+        except:
+            pass
+            
     return data
+
+def load_processed(filename):
+    reader = csv.DictReader(open(filename, 'rb'), delimiter='\t', quotechar='"')
+    return reader

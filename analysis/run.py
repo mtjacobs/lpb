@@ -1,50 +1,165 @@
-from loader import load
+import csv
+import sys
+from loader import *
 from geo import distance
-from dem import dem_ll
-from dem import delta_elevation
-from dem import statistics
+from dem import *
+from fs import *
+from nhd import *
+from nlcd import *
+from osm import *
+from stats import *
+from sql import *
+from time import time
+from tiles import clear_tile_cache
 from globalmercator import GlobalMercator
 
-data = load('data/or-sample.csv')
+filename = 'or-sample.csv'
+if len(sys.argv) > 1:
+    filename = sys.argv[1]
+#data = load_isrid('data/' + filename)
+data = load_processed(filename)
+
+def csv2ll(col):
+    try:
+        return [float(col.split(',')[0].strip()), float(col.split(',')[1].strip())]
+    except:
+        return col
+    
+def fill_nodata(row, cols):
+    for col in cols:
+        row[col] = -999
+        
+def add_ranges(row, ranges):
+    for range in ranges:
+        m, l = points_within_radius(csv2ll(row['find']), range)
+        row['m_' + str(range)] = m
+        row['l_' + str(range)] = l
+
+def read_ranges(row, ranges):
+    for range in ranges:
+        row['m_' + str(range)] = eval(row['m_' + str(range)])
+        lls = []
+        for m in row['m_' + str(range)]:
+            lls.append(gm.MetersToLatLon(m[0], m[1]))
+        row['l_' + str(range)] = lls
+
+def refresh_dem(row, ranges):
+    find = csv2ll(row['find'])
+    dem_find = dem_ll(find)
+    row['elevation'] = dem_find['elevation']
+    row['slope'] = dem_find['slope']
+    row['aspect'] = dem_find['aspect']
+
+    gm = GlobalMercator()
+    for range in ranges:
+        key = str(range)
+        elevations = []
+        slopes = []
+        aspects = []
+        for m in row['m_' + key]:
+            dem_sample = dem_px(gm.MetersToPixels(m[0], m[1], 14), 14)
+            elevations.append(dem_sample['elevation'])
+            slopes.append(dem_sample['slope'])
+            aspects.append(dem_sample['aspect'])
+        
+        row['elevation_' + key] = elevations
+        row['slope_' + key] = slopes
+        row['aspect_' + key] = aspects
+
+def refresh_nlcd(row, ranges):
+    find = csv2ll(row['find'])
+    nlcd_find = nlcd_ll(find)
+    row['canopy'] = nlcd_find['canopy']
+    row['landcover'] = nlcd_find['landcover']
+
+    gm = GlobalMercator()
+    for range in ranges:
+        key = str(range)
+        canopies = []
+        landcovers = []
+        for m in row['m_' + key]:
+            nlcd_sample = nlcd_px(gm.MetersToPixels(m[0], m[1], 12), 12)
+            canopies.append(nlcd_sample['canopy'])
+            landcovers.append(nlcd_sample['landcover'])
+
+        row['canopy_' + key] = canopies
+        row['landcover_' + key] = landcovers
+
+
+def refresh_manmade_linear(row, ranges):
+    find = csv2ll(row['find'])
+    
+    row['offset_road'] = get_osm_offset(find, 'road')
+    row['offset_trail'] = get_osm_offset(find, 'trail')
+    row['offset_fsline'] = get_fsline_offset(find)
+
+    for range in ranges:
+        key = str(range)
+        lls = row['l_' + key]
+        
+        row['offset_road_' + key] = get_osm_offsets(lls, 'road')
+        row['offset_trail_' + key] = get_osm_offsets(lls, 'trail')
+        row['offset_fsline_' + key] = get_fsline_offsets(lls)
+
+def refresh_water(row, ranges):
+    find = csv2ll(row['find'])
+
+#    row['offset_lake'] = get_nhd_offset(find, 'lake')
+#    row['offset_river'] = get_osm_offset(find, 'river')
+    row['offset_stream'] = get_nhd_offset(find, 'stream')
+    row['offset_drainage'] = get_nhd_offset(find, 'drainage')
+    
+    for range in ranges:
+        key = str(range)
+        lls = row['l_' + key]
+        
+#        row['offset_lake_' + key] = get_nhd_offsets(lls, 'lake')
+#        row['offset_river_' + key] = get_osm_offsets(lls, 'river')
+        row['offset_stream_' + key] = get_nhd_offsets(lls, 'stream')
+        row['offset_drainage_' + key] = get_nhd_offsets(lls, 'drainage')
 
 gm = GlobalMercator()
+raster_ranges = [250,800]
+sql_ranges = [800]
+ranges = raster_ranges
+for r in sql_ranges:
+    if not r in ranges:
+        ranges.append(r)
+max_range = 2000
 
-print "ID\tIPP\tFind\tDistance\tElevation Change (m)\tElevation Change (pct)\tSlope (deg)\tSlope (pct)"
+points = []
+
+# a = average, p = percentile, d = decimal, f = from find location only, s = search area, between IPP and find location 
+keys = ['id','ipp','find','type','terrain','category','age','sex','status','time','weather','ecoregion','manhours','signalling','elevation','slope','aspect','canopy','landcover','offset_road','offset_trail','offset_fsline','offset_lake','offset_river','offset_stream','offset_drainage','comments']
+for range in ranges:
+    keys.append('m_' + str(range))
+        
+for range in raster_ranges:
+    key = str(range)
+    keys.extend(['elevation_' + key, 'slope_' + key, 'aspect_' + key, 'canopy_' + key, 'landcover_' + key])
+    
+for range in sql_ranges:
+    key = str(range)
+    keys.extend(['offset_road_' + key, 'offset_trail_' + key, 'offset_fsline_' + key, 'offset_lake_' + key, 'offset_river_' + key, 'offset_stream_' + key, 'offset_drainage_' + key])
+    
+writer = csv.DictWriter(sys.stdout, keys, delimiter='\t', quotechar='"', extrasaction='ignore')
+writer.writer.writerow(keys)
+
 for row in data:
-    if row['ipp'] != None:
-        wm_ipp = gm.LatLonToMeters(row['ipp'][0], row['ipp'][1])
-        wm_find = gm.LatLonToMeters(row['find'][0], row['find'][1])
+    if row['find'] == None:
+        next
         
-        wm_center = [(wm_ipp[0] + wm_find[0])/2.0, (wm_ipp[1] + wm_find[1])/2.0] 
-        ll_center = gm.MetersToLatLon(wm_center[0], wm_center[1])
+    read_ranges(row, ranges)        
+    row['aspect'] = dem_ll(csv2ll(row['find']))['aspect']
 
-        m_distance = distance(row['ipp'], row['find'])
-        dem_find = dem_ll(row['find'])
-
-        m_elevation_ipp = dem_ll(row['ipp'])['elevation']
-        m_elevation_find = dem_find['elevation']
-        m_elevation_delta = m_elevation_find - m_elevation_ipp
+#    refresh_dem(row, raster_ranges)
+#    refresh_nlcd(row, raster_ranges)
+#    refresh_manmade_linear(row, sql_ranges)
+    refresh_water(row, sql_ranges)
         
-        deg_slope_find = dem_find['slope']
-        
-        if m_distance > 2000:
-            continue
-
-        dem_stats = statistics(ll_center, m_distance*0.5)
-        
-        m_elevation_available = 1000
-        if m_elevation_delta > 0:
-            m_elevation_available = dem_stats['elevation'][1][1] - m_elevation_ipp
-        if m_elevation_delta < 0:
-            m_elevation_available = m_elevation_ipp - dem_stats['elevation'][1][0]
-        
-        pct_elevation = 0
-        if m_elevation_available != 0:
-            pct_elevation = float(m_elevation_delta) / float(m_elevation_available)
-        
-        pct_slope_find = 0
-        if dem_stats['slope'][0] > 0:
-            pct_slope_find = float(deg_slope_find) / float(dem_stats['slope'][0])
-        
-        print row['id'] + "\t" + "%.4f"%row['ipp'][0] + ", " + "%.4f"%row['ipp'][1] + "\t" + "%.4f"%row['find'][0] + ", " + "%.4f"%row['find'][1] + "\t" + \
-            str(int(m_distance)) + "\t" + str(int(m_elevation_delta)) + "\t" + "%.2f"%pct_elevation + "\t" + str(deg_slope_find) + "\t" + "%.2f"%pct_slope_find
+    if isinstance(row['find'], list):
+        row['find'] = str(row['find'][0]) + ', ' + str(row['find'][1])
+    if isinstance(row['ipp'], list):
+        row['ipp'] = str(row['ipp'][0]) + ', ' + str(row['ipp'][1])
+    clear_tile_cache()
+    writer.writerow(row)
