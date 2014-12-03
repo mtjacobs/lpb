@@ -10,6 +10,8 @@ from osgeo import gdal
 from stats import *
 from tiles import *
 
+gm = GlobalMercator()
+
 def dem_px(p, z):
     return {'elevation': get_pixel('http://s3-us-west-1.amazonaws.com/ctslope/elevation', z, p[0], p[1]), 'slope': get_pixel('http://s3-us-west-1.amazonaws.com/ctslope/slope', z, p[0], p[1]), 'aspect': get_pixel('http://s3-us-west-1.amazonaws.com/ctslope/aspect', z, p[0], p[1])}
 
@@ -25,6 +27,44 @@ def delta_elevation(start, end):
     
     return (m_end-m_start)*3.28084
     
+def dem_stats(meters, radius):
+    cache_e = {}
+    cache_c = {}
+    cache_t = {}
+    
+    r = {'e': [], 'c': [], 't': []}
+    
+    for m in meters:
+        px_center = gm.MetersToPixels(m[0], m[1], 14)
+        elevation_center = dem_px(px_center, 14)['elevation']
+        conv_center = dem_convergence(px_center)
+        tpi_center = dem_tpi(px_center)
+    
+        points = points_within_radius(gm.MetersToLatLon(m[0], m[1]), radius)[0]
+        elevations = []
+        convs = []
+        tpis = []
+        for mp in points:
+            px = gm.MetersToPixels(mp[0], mp[1], 14)
+            p = [int(round(px[0])), int(round(px[1]))]
+            key = str(p[0]) + '_' + str(p[1])
+            if not key in cache_e:
+                cache_e[key] = dem_px(p, 14)['elevation']
+            if not key in cache_c:
+                cache_c[key] = dem_convergence(p)
+            if not key in cache_t:
+                cache_t[key] = dem_tpi(p)
+            elevations.append(cache_e[key])
+            convs.append(cache_c[key])
+            tpis.append(cache_t[key])
+        
+        r['e'].append(percentile(elevations, elevation_center))
+        r['c'].append(percentile(convs, conv_center))
+        r['t'].append(percentile(tpis, tpi_center))
+    
+    return r
+        
+        
 def dem_statistics(center, radius):
     gm = GlobalMercator()
     elevation_list = []
@@ -41,81 +81,69 @@ def dem_statistics(center, radius):
         slope_list.append(dem_sample['slope'])
         
     return {'elevation': generate_stats(elevation_list), 'slope': generate_stats(slope_list)}
+
+def dem_tpi(px_center):
+    dem_cell = dem_px(px_center, 14)
+    elevation_total = 0
+
+    offset=2
+    samples = math.pow(2*offset+1, 2) - 1
+    for xoff in range(-1*offset,offset+1):
+        for yoff in range(-1*offset,offset+1):
+            if xoff != 0 or yoff != 0:
+                dem_neighbor = dem_px([px_center[0] + xoff, px_center[1] + yoff], 14)
+                elevation_total += dem_neighbor['elevation']
     
-def fill_grid(grid, px, val, px_radius):
-    for dx in range(-1*px_radius,px_radius+1):
-        for dy in range(-1*px_radius,px_radius+1):
-            if math.sqrt(math.pow(dx, 2) + math.pow(dy, 2)) > px_radius:
-                next
-            try:
-                if grid[px[0] + dx][px[1] + dy] == None:
-                    grid[px[0] + dx][px[1] + dy] = val
-            except IndexError:
-                pass
+    elevation_avg = float(elevation_total) / samples
+    return dem_cell['elevation'] - elevation_avg
+
+def dem_convergence(px_center):
+    total_conv = 0
+    for xoff in range(-1, 2, 1):
+        for yoff in range(-1, 2, 1):
+            total_conv += dem_raw_convergence([px_center[0] + xoff, px_center[1] + yoff])
+    return total_conv / 9
+
+def dem_raw_convergence(px_center):
+    dem_cell = dem_px(px_center, 14)
+    elevation_total = 0
+    dot_total = 0
+
+    meters = gm.PixelsToMeters(px_center[0], px_center[1], 14)
+    wm_resolution = gm.Resolution(14)
+    wm_scalefactor = 1/math.cos(gm.MetersToLatLon(meters[0], meters[1])[0]*math.pi/180)
     
-def drainage_percentile(center, radius):
-    gm = GlobalMercator()
-    scale_factor = math.cos(center[0]*math.pi/180)
-    offset_drainage = get_drainage_offset(center)
- 
-    z = best_zoom(center, radius, 14)
-    resolution=gm.Resolution(z)
-    wm_radius = radius / math.cos(center[0]*math.pi/180) # scale radius to web mercator meters
-    wm_center = gm.LatLonToMeters(center[0], center[1])
-    px_center = gm.MetersToPixels(wm_center[0], wm_center[1], z)
-    px_radius = int(wm_radius / gm.Resolution(z))
+    offset=1
+    samples = math.pow(2*offset+1, 2) - 1
+    for xoff in range(-1*offset,offset+1):
+        for yoff in range(-1*offset,offset+1):
+            if xoff != 0 or yoff != 0:
+                dem_neighbor = dem_px([px_center[0] + xoff, px_center[1] + yoff], 14)
+                aspect_neighbor = dem_neighbor['aspect']*math.pi/180
+                slope_neighbor = dem_neighbor['slope']*math.pi/180
+
+                z1 = (dem_cell['elevation'] - dem_neighbor['elevation'])/3.28084
+                x1 = -1*xoff*wm_resolution/wm_scalefactor
+                y1 = -1*yoff*wm_resolution/wm_scalefactor
+                length1 = math.sqrt(x1*x1 + y1*y1 + z1*z1)
+                
+                z2 = math.sin(math.pi/2 - slope_neighbor)
+                x2 = math.sin(aspect_neighbor)*math.sin(slope_neighbor)
+                y2 = math.cos(aspect_neighbor)*math.sin(slope_neighbor)
+                length2 = math.sqrt(x2*x2 + y2*y2 + z2*z2)
+                
+                dot_total += (x1*x2 + y1*y2 + z1*z2) / (length1*length2)
+    
+    return float(dot_total) / samples
         
-    t = 0
-    f = 0
-#    print px_radius, z, offset_drainage
-    for dx in range(-1*px_radius,px_radius+1):
-        for dy in range(-1*px_radius,px_radius+1):
-            if math.sqrt(math.pow(dx, 2) + math.pow(dy, 2)) > px_radius:
-                next
-            
-            wm_sample = gm.PixelsToMeters(px_center[0] + dx, px_center[1] + dy, z);
-            offset = get_drainage_offset(gm.MetersToLatLon(wm_sample[0], wm_sample[1]), limit=offset_drainage+20)
-            
-            if offset <= offset_drainage:
-                t+=1
-            else:
-                f+=1
-    
-#    print float(t) / (t+f)
-    return float(t) / (t + f)
-    
-def get_drainage_offset(ll, limit=800):
-    gm = GlobalMercator()
-    scale_factor = math.cos(ll[0]*math.pi/180)
-    
-    wm_center = gm.LatLonToMeters(ll[0], ll[1])
-    px_center = gm.MetersToPixels(wm_center[0], wm_center[1], 14)
-    
-    return get_drainage_offset_px(px_center, scale_factor, limit)
-    
-def get_drainage_offset_px(px_center, scale_factor, limit):
-    resolution=9.5546285356470317
-    px_radius = int(limit / (scale_factor * resolution))
-
-    offset = px_radius
-    for dx in range(0, px_radius):
-        for dy in range(0, px_radius):
-            offset_sample = math.sqrt(math.pow(dx, 2) + math.pow(dy, 2))
-            for xsign in (-1, 1):
-                for ysign in (-1, 1):
-                    if offset_sample < offset:
-                        if is_drainage([px_center[0] + dx*xsign, px_center[1] + dy*ysign]):
-                            offset = offset_sample
-
-    return offset * resolution * scale_factor
-    
 def is_drainage(px_center):
     dem_cell = dem_px(px_center, 14)
     dot_total = 0
     slope_total = 0
 
-    for xoff in range(-2,3):
-        for yoff in range(-2,3):
+    offset=2
+    for xoff in range(-1*offset,offset+1):
+        for yoff in range(-1*offset,offset+1):
             if xoff != 0 or yoff != 0:
                 dem_neighbor = dem_px([px_center[0] + xoff, px_center[1] + yoff], 14)
                 theta = math.pi / 2 - math.atan2(-1*yoff, -1*xoff) - dem_neighbor['aspect']*math.pi/180 # y pixels are inverse compared to tile, i.e. +y = upward

@@ -22,7 +22,7 @@ def get_osm_where(type):
     if type == "road":
         where = "highway is not null and highway != 'footway' and highway != 'path'"
     elif type == "trail":
-        where = "(highway='footway' or highway='path' or highway='trail') or (route='foot')"
+        where = "(highway='footway' or highway='path' or highway='trail' or route='foot') and ref!='PCT'"
     elif type == "power":
         where = "power='line'"
     return table, where
@@ -33,5 +33,8 @@ def get_osm_offset(ll, type):
 
 def get_osm_offsets(lls, type):
     table, where = get_osm_where(type)
-    return get_offsets_linear(lls, table, where, 'way')
+    return get_offsets_linear(lls, [{'table': table, 'where': where, 'col': 'way'}])
 
+def get_osm_pcts(meters, radius, type):
+    table, where = get_osm_where(type)
+    return sql_stats(meters, radius, [{'table': table, 'where': where, 'col': 'way'}])

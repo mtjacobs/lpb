@@ -11,8 +11,6 @@ def percentile(list, item):
     if start == -1:
         return float(i) / float(len(list))
 
-    if float(i - start) / len(list) > 0.5:
-        return -999
     return (float(i) + float(start)) / (2*len(list))
 
 def generate_stats(list):
