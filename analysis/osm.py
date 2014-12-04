@@ -29,7 +29,7 @@ def get_osm_where(type):
 
 def get_osm_offset(ll, type):
     table, where = get_osm_where(type)
-    return get_offset_linear(ll, table, where, 'way')
+    return get_offset_linear(ll, [{'table': table, 'where': where, 'col': 'way'}])
 
 def get_osm_offsets(lls, type):
     table, where = get_osm_where(type)

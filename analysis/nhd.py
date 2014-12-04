@@ -23,7 +23,7 @@ def get_nhd_where(type):
     return None
     
 def get_nhd_offset(ll, type):
-    return get_offset_linear(ll, 'nhd', get_nhd_where(type), 'geom')
+    return get_offset_linear(ll, [{'table':'nhd', 'where':get_nhd_where(type), 'col':'geom'}])
 
 def get_nhd_offsets(lls, type):
     return get_offsets_linear(lls, [{'table':'nhd', 'where':get_nhd_where(type), 'col':'geom'}])

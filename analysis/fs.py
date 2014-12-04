@@ -15,7 +15,7 @@ def get_fsline_where(type):
 
 
 def get_fsline_offset(ll):
-    return get_offset_linear(ll, 'fsline', None, 'geom')
+    return get_offset_linear(ll, [{'table': 'fsline', 'where': None, 'col': 'geom'}])
 
 def get_fsline_offsets(lls, type=None):
     return get_offsets_linear(lls, [{'table': 'fsline', 'where': None, 'col': 'geom'}])
