@@ -445,8 +445,6 @@ def load(filename):
         df['offset_drainage_' + key] = map(eval, df['offset_drainage_' + key])
         df['offset_manmade_' + key] = map(least, df['offset_road_' + key], df['offset_trail_' + key])
         df['offset_water_' + key] = map(least, df['offset_stream_' + key], least(df['offset_river_' + key], df['offset_lake_' + key]))
-        df['offset_road_pct_' + key] = map(eval, df['offset_road_pct_' + key])
-        df['offset_trail_pct_' + key] = map(eval, df['offset_trail_pct_' + key])
         df['offset_stream_pct_' + key] = map(eval, df['offset_stream_pct_' + key])
         
         stats(df, 'offset_road_' + key, df['offset_road'], df['offset_road_' + key])
@@ -459,8 +457,6 @@ def load(filename):
         stats(df, 'offset_manmade_' + key, df['offset_manmade'], df['offset_manmade_' + key])
         stats(df, 'offset_water_' + key, df['offset_water'], df['offset_water_' + key])
 
-        df['offset_road_pct_' + key + '_pct'] = map(percentile, df['offset_road_pct_' + key], df['offset_road_' + key2 + '_pct'])
-        df['offset_trail_pct_' + key + '_pct'] = map(percentile, df['offset_trail_pct_' + key], df['offset_trail_' + key2 + '_pct'])
         df['offset_stream_pct_' + key + '_pct'] = map(percentile, df['offset_stream_pct_' + key], df['offset_stream_' + key2 + '_pct'])
         
     df['well'] = map(lambda(s): s=='Well', df['status'])
