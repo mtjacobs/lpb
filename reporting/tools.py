@@ -160,18 +160,25 @@ def plot_prefs(df, attr, by, radius=800, name='', logx=False, type='pden', buf=N
     if buf != None:
         title = title + ' buf ' + str(buf)
     plt.title(title)
+    plt.xlabel("Track Offset (m)")
+    plt.ylabel("PDEN")
     
     for val in distinct(df, by):
         if val!=val:
             continue
+        label=str(val)
+        if val == False:
+            label = "not " + by
+        if val == True:
+            label = by
         p=prefs(eq(df, by, [val]), attr, attr + '_' + str(radius), type=type, buf=buf)
         if buf != None:
             p=to_bar_plot(p)
         if val in colors:
-            p.plot(label=str(val), color=colors[val], logx=logx)
+            p.plot(label=label, color=colors[val], logx=logx)
         else:
-            p.plot(label=str(val), logx=logx)
-	    f.legend(f.get_axes()[0].get_lines(), [l.get_label() for l in f.get_axes()[0].get_lines()], loc='upper right')
+            p.plot(label=label, logx=logx)
+	f.legend(f.get_axes()[0].get_lines(), [l.get_label() for l in f.get_axes()[0].get_lines()], loc='upper right')
 
 
 def plot_pden(df, attr, radius=800, name='', logx=False, buf=None):
@@ -180,6 +187,7 @@ def plot_pden(df, attr, radius=800, name='', logx=False, buf=None):
     if buf != None:
         title = title + ' buf ' + str(buf)
     plt.title(title)
+    plt.xlabel("Track Offset (m)")
 
     col2 = attr + '_' + str(radius)
 
@@ -212,6 +220,9 @@ def pct_plot_prefs(df, attr, by, radius=800, name='', logx=False, type='pden', b
     if buf != None:
         title = title + ' buf ' + str(buf)
     plt.title(title)
+    plt.xlabel("Percentile Basis")
+    plt.ylabel("PDEN")
+
     r2 = min(radius, 800)
     for val in distinct(df, by):
         if val!=val:
@@ -232,6 +243,7 @@ def pct_plot_pden(df, attr, radius=800, name='', logx=False, buf=None, inv=False
     if buf != None:
         title = title + ' buf ' + str(buf)
     plt.title(title)
+    plt.xlabel("Percentile Basis")
 
     col1 = attr + '_' + str(min(radius, 800)) + '_pct'
     col2 = attr + '_pct_' + str(radius)
@@ -289,6 +301,12 @@ def well(df):
 def unwell(df):
     return eq(df, 'status', ['Injured','DOA'])
 
+def search(df):
+    return eq(df, 'type', ['Search'])
+
+def rescue(df):
+    return eq(df, 'type', ['Rescue'])
+
 def percentile(list, item, sort=True):
     if math.isnan(item): return item
     if sort:
@@ -344,6 +362,21 @@ def pct_developed(data):
         if d in [21,22,23,24]:
             t += 1
     return float(t) / len(data)
+    
+def pct_match(fn, d1, d2=None, d3=None):
+    try:
+        d1=coalesce(d1)
+        d2=coalesce(d2)
+        d3=coalesce(d3)
+    except:
+        pass
+    if d3 is not None:
+        tmp = map(fn, d1, d2, d3)
+    elif d2 is not None:
+        tmp = map(fn, d1, d2)
+    else:
+        tmp = map(fn, d1)    
+    return sum(tmp), sum(tmp)/float(len(d1))
 
 def table(df, row, col, fn, rows=None, cols=None):
     if rows == None:
@@ -368,6 +401,11 @@ def dist_str(a, b):
     a = math.sin(dLat/2) * math.sin(dLat/2) + math.cos(fr[0]/180*math.pi) * math.cos(to[0]/180*math.pi) * math.sin(dLon/2) * math.sin(dLon/2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return c*6378137
+    
+def eval_safe(col):
+    if col != col:
+        return col
+    return eval(col)
      
 def load(filename):
     raster_ranges = [250,800,2000]
@@ -392,13 +430,19 @@ def load(filename):
         if d < 2000:
             return '< 2km'
         return '> 2km'
+ 
+    def eg(de):                                                  
+        if de < 400:
+            return '< 0400ft'
+        if de < 1000:
+            return '< 1000ft'
+        return '> 1000 ft'
        
     df['dist'] = map(dist_str, df['ipp'], df['find'])
     df['log_dist'] = map(lambda(x): math.log(x), df['dist'])
     df['trunc_dist'] = map(lambda(x): min(x, 5000), df['dist'])
     df['dg'] = map(dg, df['dist'])
     
-
     for range in raster_ranges:
         key = str(range)
         key2 = str(min(range, 800))
@@ -426,12 +470,32 @@ def load(filename):
         df['tpi_pct_' + key + '_pct'] = map(percentile, df['tpi_pct_' + key], df['tpi_' + key2 + '_pct'])
         df['conv_pct_' + key + '_pct'] = map(percentile, df['conv_pct_' + key], df['conv_' + key2 + '_pct'])
         
+        if range == 800 and False:
+            df['ipp_elevation_' + key] = map(eval_safe, df['ipp_elevation_' + key])
+            df['ipp_tpi_' + key] = map(eval_safe, df['ipp_tpi_' + key])
+            df['ipp_conv_' + key] = map(eval_safe, df['ipp_conv_' + key])
+            df['ipp_elevation_pct_' + key] = map(eval_safe, df['ipp_elevation_pct_' + key])
+            df['ipp_tpi_pct_' + key] = map(eval_safe, df['ipp_tpi_pct_' + key])
+            df['ipp_conv_pct_' + key] = map(eval_safe, df['ipp_conv_pct_' + key])
+
+            df['ipp_elevation_' + key + '_pct'] = map(percentile, df['ipp_elevation_' + key], df['ipp_elevation'])
+            df['ipp_tpi_' + key + '_pct'] = map(percentile, df['ipp_tpi_' + key], df['ipp_tpi'])
+            df['ipp_conv_' + key + '_pct'] = map(percentile, df['ipp_conv_' + key], df['ipp_conv'])
+
+            df['ipp_elevation_pct_' + key + '_pct'] = map(percentile, df['ipp_elevation_pct_' + key], df['ipp_elevation_' + key2 + '_pct'])
+            df['ipp_tpi_pct_' + key + '_pct'] = map(percentile, df['ipp_tpi_pct_' + key], df['ipp_tpi_' + key2 + '_pct'])
+            df['ipp_conv_pct_' + key + '_pct'] = map(percentile, df['ipp_conv_pct_' + key], df['ipp_conv_' + key2 + '_pct'])
+        
         
     df['offset_manmade'] = map(min, df['offset_road'], df['offset_trail'])
     df['offset_water'] = map(min, df['offset_stream'], df['offset_river'], df['offset_lake'])
     def offset75(offset):
         return offset < 75
     df['mm75'] = map(offset75, df['offset_manmade'])
+    df['eg'] = map(eg, df['elevation_800_delta'])
+
+    df['ipp_offset_manmade'] = map(min, df['ipp_offset_road'], df['ipp_offset_trail'])
+    df['ipp_offset_water'] = map(min, df['ipp_offset_stream'], df['ipp_offset_river'], df['ipp_offset_lake'])
 
     for range in sql_ranges:
         key = str(range)
@@ -463,6 +527,9 @@ def load(filename):
     df['unwell'] = map(lambda(s): s!='Well', df['status'])
     df['cell'] = map(lambda(s): s=='Cell Phone', df['signalling'])
     df['bc'] = map(lambda(s): s < 0.25, df['developed_df_800'])
+    df['mm40'] = map(lambda(x): x < 40, df['offset_manmade'])
+    df['ipp_mm40'] = map(lambda(x): x < 40, df['ipp_offset_manmade'])
+
     
     df['cat'] = map(cat, df['category'])    
     
@@ -499,10 +566,6 @@ def createimages(sr, d=None):
         d = breakdown(sr)
 
     test=eq(d['bc'], 'cat', 'foot')
-    plot_prefs(test, 'offset_manmade', 'category')
-    plt.savefig('graphs/sample-pref-bycat.gif')
-    plt.close()
-    
     hist_dual(test['slope'].values, coalesce(test['slope_800'].values), s1='Find Location', s2='Sample Points')
     plt.savefig('graphs/sample-slope-hist-all.gif')
     plt.close()
@@ -515,14 +578,6 @@ def createimages(sr, d=None):
     plt.savefig('graphs/sample-offset-manmade-pden-buf10.gif')
     plt.close()
 
-    plot_pden(test, 'offset_manmade', logx=True)
-    plt.savefig('graphs/sample-offset-manmade-pden-logx.gif')
-    plt.close()
-
-    test.boxplot(column='offset_water', by='well')
-    plt.savefig('graphs/sample-nm-offset-water-800-pct-bywell.gif')
-    plt.close()
-    
     test.hist('elevation_800_pct', bins=14)
     plt.savefig('graphs/sample-elevation-pct.gif')
     plt.close()
@@ -539,12 +594,16 @@ def createimages(sr, d=None):
     plt.savefig('graphs/sample-elevation-pden.gif')
     plt.close()
 
-    piechart(sr, 'cat')
-    plt.savefig('graphs/search-rescue.gif')
-    plt.close()
-
-    print "\n\nBackcountry Breakdown by Category"
-    piechart(d['bc'], 'cat', table=True)
+    print "\n\nBackcountry Search Breakdown by Category"
+    piechart(eq(d['bc'], 'type', 'Search'), 'cat', table=True)
+    print "\n\nBackcountry Rescue Breakdown by Category"
+    piechart(eq(d['bc'], 'type', 'Rescue'), 'cat', table=True)
+        
+    print "\n\nBackcountry Search Breakdown by Status"
+    piechart(eq(d['bc'], 'type', 'Search'), 'status', table=True)
+    print "\n\nBackcountry Rescue Breakdown by Status"
+    piechart(eq(d['bc'], 'type', 'Rescue'), 'status', table=True)
+    
     
     plot_prefs(d['bc'], 'offset_manmade', 'cat', radius=2000)
     plt.savefig('graphs/backcountry-offset-manmade-pden-bycat.gif')
@@ -569,8 +628,6 @@ def createimages(sr, d=None):
     plot_prefs(d['bc'], 'offset_manmade', 'dg', radius=2000)
     plt.savefig('graphs/backcountry-offset-manmade-pden-bydg.gif')
     plt.close()
-    
-    d['bc']['mm40'] = map(lambda(x): x < 40, d['bc']['offset_manmade'])
 
     plot_prefs(eq(d['bc'], 'mm40', False), 'offset_stream', 'dg', radius=2000)
     plt.savefig('graphs/backcountry-nm-stream-pden-bydg.gif')
@@ -601,122 +658,101 @@ def createimages(sr, d=None):
 
     f=eq(d['bc'], 'cat', 'foot')
     
-    plot_prefs(f, 'offset_manmade', 'category')
-    plt.savefig('graphs/foot-offset-manmade-pden-bycat.gif')
+    plot_prefs(f, 'offset_road', 'well')
+    plt.savefig('graphs/foot-offset-road-pden-bywell.gif')
     plt.close()
 
-    plot_prefs(f, 'offset_manmade', 'well')
-    plt.savefig('graphs/foot-offset-manmade-pden-bywell.gif')
+    plot_prefs(f, 'offset_road', 'well', buf=10)
+    plt.savefig('graphs/foot-offset-road-pden-bywell-buf10.gif')
     plt.close()
-
-    pct_plot_prefs(f, 'elevation', 'well')
-    plt.savefig('graphs/foot-elevation-pden-bywell.gif')
-    plt.close()
-
-    plot_pden(f, 'offset_manmade', buf=10)
-    plt.savefig('graphs/foot-offset-manmade-pden-buf10.gif')
-    plt.close()
+    
+    fnr = gt(f, 'offset_road', 40)
         
+    plot_prefs(fnr, 'offset_trail', 'well')
+    plt.savefig('graphs/foot-offset-trail-pden-bywell.gif')
+    plt.close()
+
+    plot_prefs(fnr, 'offset_trail', 'well', buf=10)
+    plt.savefig('graphs/foot-offset-trail-pden-bywell-buf10.gif')
+    plt.close()
+
     fm = lt(f, 'offset_manmade', 40)
     fnm = gt(f, 'offset_manmade', 40)
+    fnl = gt(fnm, 'offset_lake', 40)
     
-    print "\n\nFoot Status for On-Trail"
-    piechart(fm, 'status', table=True)
-    
-    print "\n\nFoot Status for Off-Trail"
-    piechart(fnm, 'status', table=True)
-    
-    
-    plot_prefs(fnm, 'offset_water', 'well')
-    plt.savefig('graphs/foot-nm-offset-water-pden-bywell.gif')
-    plt.close()
-
-    plot_prefs(fnm, 'offset_stream', 'well')
-    plt.savefig('graphs/foot-nm-offset-stream-pden-bywell.gif')
+    plot_prefs(fnl, 'offset_stream', 'well')
+    plt.savefig('graphs/foot-nl-offset-stream-pden-bywell.gif')
     plt.close()
 
     plot_prefs(fnm, 'offset_stream', 'well', buf=20)
-    plt.savefig('graphs/foot-nm-offset-stream-pden-bywell-buf20.gif')
+    plt.savefig('graphs/foot-nl-offset-stream-pden-bywell-buf20.gif')
     plt.close()
 
-    plot_prefs(fnm, 'offset_stream', 'category')
-    plt.savefig('graphs/foot-nm-offset-stream-pden-bycategory.gif')
-    plt.close()
-
-    fnm.boxplot(column='offset_stream_2000_pct', by='well')
-    plt.savefig('graphs/foot-nm-offset-stream-pct-bywell.gif')
-    plt.close()
-    
-    hist_by(fnm, 'elevation_800_pct', 'well')
-    plt.savefig('graphs/foot-nm-elevation-pct-bywell.gif')
-    plt.close()
-    
-    plot_prefs(f, 'offset_manmade', 'dg', radius=2000)
-    plt.savefig('graphs/foot-manmade-pden-bydg.gif')
-    plt.close()
-    
-    plot_prefs(fnm, 'offset_stream', 'dg', radius=2000)
-    plt.savefig('graphs/foot-nm-stream-pden-bydg.gif')
-    plt.close()
-    
-    pct_plot_prefs(fnm, 'elevation', 'dg', radius=2000)
-    plt.savefig('graphs/foot-nm-elevation-pden-bydg.gif')
-    plt.close()
-
-    print "\n\nFoot, No-Manmade percentage within 100m of a stream by category and well"
-    table(fnm, 'category', 'well', generate_pct_fn(lambda(x): x['offset_water'] <  100 ))
-    
-    print "\n\nFoot, No-Manmade Injury/DOA rate by category and near-water"
-    fnm['w100'] = map(lambda(x): x < 100, fnm['offset_water'])
-    fnm['s80'] = map(lambda(x): x < 80, fnm['offset_stream'])
-    table(fnm, 'category', 'w100', generate_pct_fn(lambda(x): x['well'] == False ))
-    
-    hist_by(fnm, 'elevation_pct_800_pct', 'well')
-    plt.savefig('graphs/foot-nm-elevation-pct-2000-pct-bywell.gif')
-    plt.close()
-
-    pct_plot_prefs(fnm, 'elevation', 'well', radius=2000)
-    plt.savefig('graphs/foot-nm-elevation-pden-bywell.gif')
+    plot_prefs(fnl, 'offset_stream', 'category')
+    plt.savefig('graphs/foot-nl-offset-stream-pden-bycat.gif')
     plt.close()
 
     pct_plot_prefs(fnm, 'elevation', 'well', radius=2000, buf=0.1)
     plt.savefig('graphs/foot-nm-elevation-pden-bywell-buf.gif')
     plt.close()
 
-    pct_plot_prefs(fnm, 'conv', 'well', radius=2000)
-    plt.savefig('graphs/foot-nm-conv-pden-bywell.gif')
-    plt.close()
-
     pct_plot_prefs(fnm, 'conv', 'well', radius=2000, buf=0.1)
     plt.savefig('graphs/foot-nm-conv-pden-bywell-buf.gif')
     plt.close()
-    
-    hist_by(f, 'elevation_pct_2000_pct', 'well')   
-    plt.savefig('graphs/foot-nm-elevation-hist-bywell.gif') 
+
+    hist_dual(f['log_dist'].values, d['bc']['log_dist'].values)
+    plt.savefig('graphs/foot-dist.gif')
     plt.close()
 
-    unwell(fnm).plot(kind='scatter', x='dist', y='elevation_pct_2000_pct', logx=True)
-    plt.savefig('graphs/foot-nm-unwell-elevation-v-distance.gif')
+    hist_by(f, 'log_dist', 'ipp_mm40')
+    plt.savefig('graphs/foot-dist-by-ipp.gif')
+    plt.close()
+
+    plot_prefs(f, 'offset_manmade', 'dg', radius=2000)
+    plt.savefig('graphs/foot-manmade-pden-bydg.gif')
+    plt.close()
+
+    plot_prefs(f, 'offset_manmade', 'ipp_mm40', radius=2000)
+    plt.savefig('graphs/foot-manmade-pden-byipp.gif')
+    plt.close()
+
+    plot_prefs(fnl, 'offset_stream', 'dg', radius=2000)
+    plt.savefig('graphs/foot-nl-stream-pden-bydg.gif')
+    plt.close()
+
+    pct_plot_prefs(fnl, 'elevation', 'dg', radius=2000)
+    plt.savefig('graphs/foot-nl-elevation-pden-bydg.gif')
+    plt.close()
+
+    unwell(fnl).plot(kind='scatter', x='log_dist', y='elevation_2000_pct')
+    plt.savefig('graphs/foot-nl-unwell-elevation-v-distance.gif')
+    plt.close()
+
     
     
     c=eq(d['bc'], 'cat', 'child')
     
-    plot_pden(c, 'offset_manmade', radius=2000)
-    plt.savefig('graphs/child-offset-manmade-pden.gif')
-    plt.close()
-    
-    cnm = gt(c, 'offset_manmade', 40)
-    
-    plot_prefs(cnm, 'offset_stream', 'dg', radius=2000)
-    plt.savefig('graphs/child-nm-stream-pden-bydg.gif')
-    plt.close()
-    
-    cnw = gt(cnm, 'offset_water', 40)
-    
-    cnw.hist('slope')
-    plt.savefig('graphs/child-nw-slope.gif')
+    hist_dual(c['log_dist'].values, d['bc']['log_dist'].values)
+    plt.savefig('graphs/child-dist.gif')
     plt.close()
 
+    hist_by(c, 'log_dist', 'ipp_mm40')
+    plt.savefig('graphs/child-dist-by-ipp.gif')
+    plt.close()
+
+    plot_pden(c, 'offset_road', buf=10)
+    plt.savefig('graphs/child-offset-road-pden-buf10.gif')
+    plt.close()
+    
+    cnr = gt(c, 'offset_road', 30)
+
+    plot_pden(cnr, 'offset_trail', buf=10)
+    plt.savefig('graphs/child-offset-trail-pden-buf10.gif')
+    plt.close()
+    
+    cnm = gt(cnr, 'offset_trail', 70)    
+    cnw = gt(cnm, 'offset_water', 40)
+    
     cnw.hist('slope_800_pct')
     plt.savefig('graphs/child-nw-slope-800-pct.gif')
     plt.close()
@@ -724,14 +760,16 @@ def createimages(sr, d=None):
     cnw.plot(x='age', y='slope_800_pct', kind='scatter')
     plt.savefig('graphs/child-nw-slope-800-pct-byage.gif')
     plt.close()
-    
-    hist_dual(c['log_dist'].values, d['bc']['log_dist'].values)
-    plt.savefig('graphs/child-distance.gif')
-    plt.close()
 
     plot_prefs(c, 'offset_manmade', 'dg', radius=2000)    
     plt.savefig('graphs/child-manmade-pden-bydg.gif')
     plt.close()
+
+    plot_prefs(cnm, 'offset_water', 'dg', radius=2000)    
+    plt.savefig('graphs/child-nm-water-pden-bydg.gif')
+    plt.close()
+
+
 
     s=eq(d['bc'], 'cat', 'despondent')
     snm = gt(s, 'offset_manmade', 40)
